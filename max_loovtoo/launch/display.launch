@@ -1,0 +1,8 @@
+<launch>
+  <include file="$(find ar_track_alvar)/launch/pr2_indiv_no_kinect.launch">
+    <arg name="cam_image_topic" value="camera/color/image_raw"/>
+    <arg name="cam_info_topic" value="camera/color/camera_info"/>
+    <arg name="output_frame" value="camera_link"/>
+    <arg name="marker_size" value="10"/>
+  </include>
+</launch>
