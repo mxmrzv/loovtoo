@@ -3,6 +3,9 @@ import rospy
 from geometry_msgs.msg import Twist
 from ar_track_alvar_msgs.msg import AlvarMarkers
 from std_srvs.srv import Empty, EmptyResponse
+from math import atan2
+
+DOCK_MARKER_ID = 1 # AR marker ID that will be searched for
 
 IDLE = 0
 APPROACH_MARKER = 1
@@ -10,33 +13,42 @@ DOCK = 2
 CHARGE = 3
 UNDOCK = 4
      
-def empty_cb(req):
-    return EmptyResponse()
-     
 def ar_message_handler(data):
-    global leitud_markeri_ID
+    global latest_marker
 	
+    latest_marker = None
     if len(data.markers) > 0:
         for marker in data.markers:
             rospy.loginfo("Detected marker with ID " + str(marker.id))
-            leitud_markeri_ID = marker.id            
+            if marker.id == DOCK_MARKER_ID:
+                latest_marker = marker # Correct marker was detected
             rospy.loginfo("y coordinate: " + str(marker.pose.pose.position.y))
-            	
     else:
-        leitud_markeri_ID = None
         rospy.loginfo("No AR markers detected.")
+
+def dock_cb(req):
+    global state
+    if state == IDLE:
+        state = APPROACH_MARKER
+    return EmptyResponse()
+
+def undock_cb(req):
+    global state
+    if state == CHARGE:
+        state = UNDOCK
+    return EmptyResponse()
 		
 def main():
-    global olek
-    olek = IDLE
+    global state
+    state = IDLE
     
-    global leitud_markeri_ID
-    leitud_markeri_ID = None
+    global latest_marker
+    latest_marker = None
 
     rospy.init_node("ar_subscriber")
     ar_sub = rospy.Subscriber("ar_pose_marker", AlvarMarkers, ar_message_handler)
-    empty_service = rospy.Service("dock", Empty, empty_cb)
-    empty_service = rospy.Service("undock", Empty, empty_cb)
+    empty_service = rospy.Service("dock", Empty, dock_cb)
+    empty_service = rospy.Service("undock", Empty, undock_cb)
    
     velocity_pub = rospy.Publisher("cmd_vel", Twist, queue_size=0)
 	
@@ -55,40 +67,66 @@ def main():
             robot_vel.angular.x = 0.0
             robot_vel.angular.y = 0.0
             robot_vel.angular.z = z
-            
+
             velocity_pub.publish(robot_vel)
-			
             loop_rate.sleep()
 	
-    otsitav = 1
     while not rospy.is_shutdown():
+
+        rospy.loginfo_throttle(1, "state: %d" % state)
 	
-        if olek == IDLE:
-            move(0, 0, 0, 0)
+        if state == IDLE:
+            move(0.5, 0, 0, 0) # stop
             
-        elif olek == APPROACH_MARKER: 
-            move(0.3, 0, 0, 0.3)
-            if marker.pose.pose.position.y == 0:
-                move(1, 1, 0, 0)
-                if marker.pose.pose.position.x == 0.4:
-                    move(0, 0, 0, 0)
-                    olek = DOCK
+        elif state == APPROACH_MARKER: 
+            robot_vel = Twist()
+            
+            if latest_marker:
+                # Marker detected, use shorter naming for convenience
+                m_pos = latest_marker.pose.pose.position
+                
+                # Marker detected, check if we are close enough
+                if m_pos.x <= 0.4:
+                    # advance to the DOCK state, zero twist will stop the robot
+                    state = DOCK
+                else:
+                    # Marker detected too far, let's get closer
+                    robot_vel.linear.x = 0.2
+
+                    # Rotate towards the marker by calculating the angle first
+                    angle = atan2(m_pos.y, m_pos.x)
+                    robot_vel.angular.z = angle
+                    #if m_pos.y > 0:
+                    #    # Marker found on the right side -> turn right
+                    #    robot_vel.angular.z = -0.3 
+                    #else:
+                    #    # Marker has to be on the left side -> turn left
+                    #    robot_vel.angular.z = 0.3 
+                    
+            else:
+                # Marker not found, do something slowly to detect it
+                robot_vel.angular.z = .3 
+
+            velocity_pub.publish(robot_vel)
+
          
-        elif olek == DOCK: 
-            move(0.3, 0, 0, 0.3)    
-            if leitud_markeri_ID == otsitav:           
-                move(1, 0, 0, 3.14)
-                move(0.1, -0.1, 0, 0)
-                olek = CHARGE
+        elif state == DOCK: 
+            # Do blind movements to dock the robot
+            move(4, 0, 0, 3.14/4) # turn around in 4 sec
+            move(1, -0.1, 0, 0) # backup
+            move(0.5, 0, 0, 0) # stop
+            state = CHARGE
         
-        elif olek == CHARGE:
-            move(0, 0, 0, 0)
+        elif state == CHARGE:
+            # Fakes charging for now
             rospy.sleep(10)
-            olek = UNDOCK
+            state = UNDOCK
         
-        elif olek == UNDOCK:
-            move(1, 1, 0, 0) 
-            olek = IDLE
+        elif state == UNDOCK:
+            # Do bind movements to undock the robot
+            move(1, 0.4, 0, 0) 
+            move(0.5, 0, 0, 0) # stop
+            state = IDLE
                   	
 if __name__ =='__main__':
     try:  
