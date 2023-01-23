@@ -81,7 +81,7 @@ def main():
         elif state == APPROACH_MARKER: 
             robot_vel = Twist()
             
-            if latest_marker:
+            if latest_marker == DOCK_MARKER_ID:
                 # Marker detected, use shorter naming for convenience
                 m_pos = latest_marker.pose.pose.position
                 
