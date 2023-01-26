@@ -75,6 +75,12 @@ def main():
 
         rospy.loginfo_throttle(1, "state: %d" % state)
 	
+	if latest_marker != None:
+            ori_q = latest_marker.pose.pose.orientation
+            ori_list = [ori_q.x, ori_q.y, ori_q.z, ori_q.w]
+            (roll, pitch, yaw) = euler_from_quaternion (ori_list)
+            print(yaw)
+	
         if state == IDLE:
             move(0.5, 0, 0, 0) # stop
             
