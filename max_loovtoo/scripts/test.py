@@ -3,7 +3,8 @@ import rospy
 from geometry_msgs.msg import Twist
 from ar_track_alvar_msgs.msg import AlvarMarkers
 from std_srvs.srv import Empty, EmptyResponse
-from math import atan2
+from math import atan2, pi
+from tf.transformations import euler_from_quaternion
 
 DOCK_MARKER_ID = 1 # AR marker ID that will be searched for
 
@@ -75,12 +76,6 @@ def main():
 
         rospy.loginfo_throttle(1, "state: %d" % state)
 	
-	if latest_marker != None:
-            ori_q = latest_marker.pose.pose.orientation
-            ori_list = [ori_q.x, ori_q.y, ori_q.z, ori_q.w]
-            (roll, pitch, yaw) = euler_from_quaternion (ori_list)
-            print(yaw)
-	
         if state == IDLE:
             move(0.5, 0, 0, 0) # stop
             
@@ -90,6 +85,12 @@ def main():
             if latest_marker:
                 # Marker detected, use shorter naming for convenience
                 m_pos = latest_marker.pose.pose.position
+
+                ori_q = latest_marker.pose.pose.orientation
+                ori_list = [ori_q.x, ori_q.y, ori_q.z, ori_q.w]
+                (roll, pitch, yaw) = euler_from_quaternion (ori_list)
+                print(pi/2-yaw)
+	
                 
                 # Marker detected, check if we are close enough
                 if m_pos.x <= 0.4:
@@ -102,12 +103,11 @@ def main():
                     # Rotate towards the marker by calculating the angle first
                     angle = atan2(m_pos.y, m_pos.x)
                     robot_vel.angular.z = angle
-                    #if m_pos.y > 0:
-                    #    # Marker found on the right side -> turn right
-                    #    robot_vel.angular.z = -0.3 
-                    #else:
-                    #    # Marker has to be on the left side -> turn left
-                    #    robot_vel.angular.z = 0.3 
+                    
+                    # Sidewise movement according to yaw value
+                    MAX_LIN_VEL = 0.3
+                    y_vel = (pi/2.0 - yaw) * 0.2 # convert from angle to velocity
+                    robot_vel.linear.y = max(min(y_vel, MAX_LIN_VEL), -MAX_LIN_VEL) # keep y-velocity in a range [-MAX_LIN_VEL...MAX_LIN_VEL]
                     
             else:
                 # Marker not found, do something slowly to detect it
